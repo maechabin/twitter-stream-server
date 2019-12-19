@@ -1,41 +1,44 @@
-import TwitterRepository from './twitter.repository';
 import * as express from 'express';
 import * as exporessWS from 'express-ws';
+
+import { Tweets } from './tweets';
+import TwitterRepository from './twitter.repository';
 
 const app = express();
 exporessWS(app);
 
 const twitterRepository = new TwitterRepository();
-const port = process.env.PORT || 3030;
+const port = process.env.PORT || 3000;
 
 // @ts-ignore: ws injected via express-ws
 (app as exporessWS.Application).ws('/stream/:keyword', (client, req) => {
-  let tweets: any[] = [];
-  let timer: any;
+  console.log('Stream started.');
 
+  const tweets = new Tweets();
   const keyword = decodeURI(req.params.keyword) || 'twitter';
   const stream = twitterRepository.getStream(keyword);
+  let timer: NodeJS.Timeout;
 
-  stream.on('tweet', (tweet: any) => {
-    console.log('Stream started.');
-    tweets = [...tweets, tweet];
+  stream.on('tweet', tweet => {
+    tweets.add(tweet);
 
     if (!timer) {
       timer = setInterval(() => {
-        client.send(JSON.stringify(tweets));
-        tweets = [];
+        client.send(tweets.convertToString());
+        tweets.reset();
       }, 5000);
     }
   });
 
-  stream.on('error', (error: any) => {
+  stream.on('error', (error: Error) => {
     throw error;
   });
 
   client.on('close', () => {
     stream.stop();
     clearInterval(timer);
-    tweets = [];
+    tweets.reset();
+
     console.log('Stream stopped.');
   });
 });
